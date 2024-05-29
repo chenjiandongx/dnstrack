@@ -1,14 +1,14 @@
 # dnstrack
 
-> A dns-query tracking tool written in go.
+> 使用 golang 编写的基于 bpf 的 dns 查询追踪工具。 
 
-[中文介绍](./README-CN.md)
+dnstrack 使用 libpcap 监听机器网卡并过滤 dns 查询，同时提供了多种输出方式（verbose/question/json/yaml）。此工具主要用于发现是否有进程持续高频地访问 dns 服务。
 
 ## Installation
 
 ### 1) libpcap
 
-***dnstrack*** relies on the `libpcap` library to capture user-level packets hence you need to have it installed first.
+***dnstrack*** 依赖于 `libpacp` 库捕获内核网络数据包，所以需要先安装此工具。
 
 **Debian/Ubuntu**
 ```shell
@@ -22,7 +22,7 @@ $ sudo yum install libpcap libpcap-devel
 
 **Windows**
 
-Windows need to have [npcap](https://nmap.org/npcap/) installed for capturing packets.
+Windows 用户则需要安装 [npcap](https://nmap.org/npcap/) 工具。
 
 ### 2) dnstrack
 
@@ -32,7 +32,7 @@ $ go install github.com/chenjiandongx/dnstrack@latest
 
 ## Usages
 
-> make sure you're in privileged mode or root.
+> dnstrack 命令需要在特权模式或者 root 用户下运行。
 
 ```shell
 > dnstrack -h
@@ -59,7 +59,7 @@ Flags:
   -v, --version                version for dnstrack
 ```
 
---output-format verbose
+verbose 输出格式。
 ```shell
 > dnstrack -d '^lo$|^ens'
 --------------------
@@ -92,7 +92,7 @@ ns3.google.com.	 A	 INET	 216.239.36.10
 ns1.google.com.	 A	 INET	 216.239.32.10
 ```
 
---output-format question
+question 输出格式。
 ```shell
 > dnstrack -d '^lo$|^ens' -oq
 2024-05-29T00:44:02+08:00	<ens160>@172.16.22.2:53	A	44.959µs	facebook.com.
