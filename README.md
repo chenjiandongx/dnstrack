@@ -1,6 +1,6 @@
 # dnstrack
 
-> A dns-query tracking tool written in go.
+> A dns-query tracking tool written in go. dnstrack helps to track all dns query on your machine in real time.
 
 [中文介绍](./README-CN.md)
 
