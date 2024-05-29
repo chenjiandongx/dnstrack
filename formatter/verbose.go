@@ -3,16 +3,28 @@ package formatter
 import (
 	"bytes"
 	"fmt"
+	"time"
 )
 
-type verboseFormatter struct{}
+type verboseFormatter struct {
+	f *Filter
+}
 
 var _ Formatter = (*verboseFormatter)(nil)
 
-func (verboseFormatter) Format(msg MessageWrap) string {
+func (vf verboseFormatter) Format(msg MessageWrap) (string, bool) {
+	if vf.f != nil && !vf.f.Pass(msg) {
+		return "", false
+	}
+
 	buf := &bytes.Buffer{}
 	buf.WriteString("--------------------\n\n")
-	buf.WriteString(fmt.Sprintf("; Devide: %s, Server: %s, Elapsed: %v\n", msg.Device, msg.Server, msg.Duration))
+
+	header := msg.Msg.Header
+	buf.WriteString(fmt.Sprintf("; <%s>@%s, ID: %d, OpCpde: %s, Status: %s\n", msg.Device, msg.Server, header.ID, header.OpCode, header.Status))
+	buf.WriteString(fmt.Sprintf(";; When: %s\n", msg.When.Format(time.RFC3339)))
+	buf.WriteString(fmt.Sprintf(";; Query Time: %s\n", msg.Duration))
+	buf.WriteString(fmt.Sprintf(";; Msg Size: %dB\n", msg.Size))
 
 	question := msg.Msg.QuestionSec
 	buf.WriteString("\n;; Question Section:\n")
@@ -24,7 +36,7 @@ func (verboseFormatter) Format(msg MessageWrap) string {
 	} else {
 		buf.WriteString("\n;; Answer Section:\n")
 		for _, item := range answer {
-			buf.WriteString(fmt.Sprintf("%s\t %s\t %d\t %s\n", item.Name, item.Type, item.TTL, item.Record))
+			buf.WriteString(fmt.Sprintf("%s\t %d\t %s\t %s\t %s\n", item.Name, item.TTL, item.Type, item.Class, item.Record))
 		}
 	}
 
@@ -34,7 +46,7 @@ func (verboseFormatter) Format(msg MessageWrap) string {
 	} else {
 		buf.WriteString("\n;; Authority Section:\n")
 		for _, item := range authority {
-			buf.WriteString(fmt.Sprintf("%s\t %s\t %s\n", item.Name, item.Type, item.Record))
+			buf.WriteString(fmt.Sprintf("%s\t %s\t %s\t %s\n", item.Name, item.Type, item.Class, item.Record))
 		}
 	}
 
@@ -44,9 +56,9 @@ func (verboseFormatter) Format(msg MessageWrap) string {
 	} else {
 		buf.WriteString("\n;; Additional Section:\n")
 		for _, item := range additional {
-			buf.WriteString(fmt.Sprintf("%s\t %s\t %s\n", item.Name, item.Type, item.Record))
+			buf.WriteString(fmt.Sprintf("%s\t %s\t %s\t %s\n", item.Name, item.Type, item.Class, item.Record))
 		}
 	}
 
-	return buf.String()
+	return buf.String(), true
 }

@@ -4,14 +4,12 @@ package main
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
 	"github.com/pkg/errors"
 
-	"github.com/chenjiandongx/dnstrack/codec"
 	"github.com/chenjiandongx/dnstrack/formatter"
 )
 
@@ -21,23 +19,15 @@ type pcapHandler struct {
 }
 
 type PcapClient struct {
-	opt        Options
-	handlers   []*pcapHandler
-	allDevices bool
-	devices    string
-	server     string
-	cache      *cache
-	formatter  formatter.Formatter
+	opt      Options
+	handlers []*pcapHandler
+	common   *CommonClient
 }
 
 func NewPcapClient(opt Options) (*PcapClient, error) {
 	client := &PcapClient{
-		opt:        opt,
-		devices:    opt.Devices,
-		allDevices: opt.AllDevices,
-		server:     opt.Server,
-		cache:      newCache(),
-		formatter:  formatter.New(opt.Format),
+		opt:    opt,
+		common: NewCommonClient(formatter.New(opt.Format, opt.Server, opt.Type)),
 	}
 
 	if err := client.getAvailableDevices(); err != nil {
@@ -52,7 +42,7 @@ func NewPcapClient(opt Options) (*PcapClient, error) {
 }
 
 func (c *PcapClient) getAvailableDevices() error {
-	devs, err := filterDevices(c.devices, c.allDevices)
+	devs, err := filterDevices(c.opt.Devices, c.opt.AllDevices)
 	if err != nil {
 		return err
 	}
@@ -118,9 +108,6 @@ func (c *PcapClient) parsePacket(packet gopacket.Packet) *SP {
 	} else {
 		server = fmt.Sprintf("%s:%d", dstIP, dstPort)
 	}
-	if c.server != "" && c.server+":53" != server {
-		return nil
-	}
 
 	return &SP{
 		Server:  server,
@@ -143,31 +130,13 @@ func (c *PcapClient) listen(ph *pcapHandler) {
 			if sp == nil {
 				continue
 			}
-
-			r, err := codec.Decode(sp.Payload)
-			if err != nil {
-				continue
-			}
-
-			header := r.Header
-			uk := fmt.Sprintf("%s/%d", ph.device, header.ID)
-			if !header.Response {
-				c.cache.set(uk, packet.Metadata().Timestamp)
-				continue
-			}
-			t, ok := c.cache.get(uk)
-			if !ok {
-				continue
-			}
-
-			fmt.Println(c.formatter.Format(formatter.MessageWrap{
-				Duration: time.Since(t),
-				Msg:      r,
-				Device:   ph.device,
-				Server:   sp.Server,
-			}))
+			c.common.Display(sp, ph.device, packet.Metadata().Timestamp)
 		}
 	}
+}
+
+func (c *PcapClient) Stats() Stats {
+	return c.common.Stats()
 }
 
 func (c *PcapClient) Close() {

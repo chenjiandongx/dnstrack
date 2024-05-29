@@ -16,7 +16,7 @@ func NewApp() *cobra.Command {
 
 	app := &cobra.Command{
 		Use:     "dnstrack",
-		Short:   "# dns-query tracking tool written in go",
+		Short:   "# A dns-query tracking tool written in go",
 		Version: version,
 		Run: func(cmd *cobra.Command, args []string) {
 			if list {
@@ -45,10 +45,11 @@ func NewApp() *cobra.Command {
 	}
 
 	app.Flags().BoolVarP(&list, "list", "l", false, "list all devices name")
-	app.Flags().StringVarP(&opt.Devices, "devices", "d", defaultOpts.Devices, "specify devices regex pattern filter")
+	app.Flags().StringVarP(&opt.Devices, "devices", "d", defaultOpts.Devices, "devices regex pattern filter")
 	app.Flags().BoolVarP(&opt.AllDevices, "all-devices", "a", defaultOpts.AllDevices, "listen all devices if present")
-	app.Flags().StringVarP(&opt.Server, "server", "s", defaultOpts.Server, "specify the dns server filters")
-	app.Flags().StringVarP(&opt.Format, "output-format", "o", defaultOpts.Format, "output format. [json(j)|yaml(y)|question(q)|verbose(v)]")
+	app.Flags().StringVarP(&opt.Server, "server", "s", defaultOpts.Server, "dns server filter")
+	app.Flags().StringVarP(&opt.Type, "type", "t", defaultOpts.Type, "dns query type filter [A/AAAA/CNAME/...]")
+	app.Flags().StringVarP(&opt.Format, "output-format", "o", defaultOpts.Format, "output format [json(j)|yaml(y)|question(q)|verbose(v)]")
 
 	app.Flags().PrintDefaults()
 	return app

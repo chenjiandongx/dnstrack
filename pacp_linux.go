@@ -14,7 +14,6 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/net/bpf"
 
-	"github.com/chenjiandongx/dnstrack/codec"
 	"github.com/chenjiandongx/dnstrack/formatter"
 )
 
@@ -24,23 +23,17 @@ type pcapHandler struct {
 }
 
 type PcapClient struct {
-	ctx        context.Context
-	cancel     context.CancelFunc
-	handlers   []*pcapHandler
-	devices    string
-	server     string
-	allDevices bool
-	cache      *cache
-	formatter  formatter.Formatter
+	ctx      context.Context
+	cancel   context.CancelFunc
+	opt      Options
+	handlers []*pcapHandler
+	common   *CommonClient
 }
 
 func NewPcapClient(opt Options) (*PcapClient, error) {
 	client := &PcapClient{
-		devices:    opt.Devices,
-		allDevices: opt.AllDevices,
-		formatter:  formatter.New(opt.Format),
-		server:     opt.Server,
-		cache:      newCache(),
+		opt:    opt,
+		common: NewCommonClient(formatter.New(opt.Format, opt.Server, opt.Type)),
 	}
 
 	client.ctx, client.cancel = context.WithCancel(context.Background())
@@ -56,7 +49,7 @@ func NewPcapClient(opt Options) (*PcapClient, error) {
 }
 
 func (c *PcapClient) getAvailableDevices() error {
-	devs, err := filterDevices(c.devices, c.allDevices)
+	devs, err := filterDevices(c.opt.Devices, c.opt.AllDevices)
 	if err != nil {
 		return err
 	}
@@ -134,9 +127,6 @@ func (c *PcapClient) parsePacket(data []byte) *SP {
 	} else {
 		server = fmt.Sprintf("%s:%d", dstIP, dstPort)
 	}
-	if c.server != "" && c.server+":53" != server {
-		return nil
-	}
 
 	return &SP{
 		Server:  server,
@@ -163,31 +153,13 @@ func (c *PcapClient) listen(ph *pcapHandler) {
 			if sp == nil {
 				continue
 			}
-
-			r, err := codec.Decode(sp.Payload)
-			if err != nil {
-				continue
-			}
-
-			header := r.Header
-			uk := fmt.Sprintf("%s/%d", ph.device, header.ID)
-			if !header.Response {
-				c.cache.set(uk, time.Now()) // approximate time
-				continue
-			}
-			t, ok := c.cache.get(uk)
-			if !ok {
-				continue
-			}
-
-			fmt.Println(c.formatter.Format(formatter.MessageWrap{
-				Duration: time.Since(t),
-				Msg:      r,
-				Device:   ph.device,
-				Server:   sp.Server,
-			}))
+			c.common.Display(sp, ph.device, time.Now()) // approximate time
 		}
 	}
+}
+
+func (c *PcapClient) Stats() Stats {
+	return c.common.Stats()
 }
 
 func (c *PcapClient) Close() {

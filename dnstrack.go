@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,6 +11,10 @@ import (
 type Options struct {
 	// Server specifies the dns server filters
 	Server string
+
+	// Type specifies the dns query type, optional:
+	// A/AAAA/CNAME/NS/PTR/...
+	Type string
 
 	// Devices represents devices regexp pattern to monitor
 	Devices string
@@ -49,12 +54,14 @@ func NewDnsTrack(opts Options) (*DnsTrack, error) {
 	}, nil
 }
 
-func (dq *DnsTrack) Start() {
+func (dt *DnsTrack) Start() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, os.Interrupt)
 	<-sigCh
 }
 
-func (dq *DnsTrack) Close() {
-	dq.pcapClient.Close()
+func (dt *DnsTrack) Close() {
+	stats := dt.pcapClient.Stats()
+	fmt.Fprintf(os.Stderr, "\n%d queries captured\n%d queries dropped by filter\n%d queries no response\n", stats.Queries, stats.Drop, stats.Missing)
+	dt.pcapClient.Close()
 }

@@ -4,37 +4,115 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 
 	"golang.org/x/net/dns/dnsmessage"
 )
 
+// Header the header of the dns message
 type Header struct {
 	ID       uint16 `json:"id" yaml:"id"`
+	OpCode   string `json:"opcode" yaml:"opcode"`
+	Status   string `json:"status" yaml:"status"`
 	Response bool   `json:"-" yaml:"-"`
 }
 
+// Question the question for the name server
 type Question struct {
 	Name string `json:"name" yaml:"name"`
 	Type string `json:"type" yaml:"type"`
 }
 
+// Answer RRs answering the question
 type Answer struct {
 	Name   string `json:"name" yaml:"name"`
 	Type   string `json:"type" yaml:"type"`
 	TTL    uint32 `json:"ttl" yaml:"ttl"`
+	Class  string `json:"class" yaml:"class"`
 	Record string `json:"record" yaml:"record"`
 }
 
+// Authority RRs pointing toward an authority
 type Authority struct {
 	Name   string `json:"name" yaml:"name"`
 	Type   string `json:"type" yaml:"type"`
+	Class  string `json:"class" yaml:"class"`
 	Record string `json:"record" yaml:"record"`
 }
 
+// Additional RRs holding additional information
 type Additional struct {
 	Name   string `json:"name" yaml:"name"`
 	Type   string `json:"type" yaml:"type"`
+	Class  string `json:"class" yaml:"class"`
 	Record string `json:"record" yaml:"record"`
+}
+
+func ClassMapping(class dnsmessage.Class) string {
+	mapping := map[dnsmessage.Class]string{
+		dnsmessage.ClassINET:   "INET",
+		dnsmessage.ClassCSNET:  "CSNET",
+		dnsmessage.ClassCHAOS:  "CHAOS",
+		dnsmessage.ClassHESIOD: "HESIOD",
+		dnsmessage.ClassANY:    "ANY",
+	}
+
+	v, ok := mapping[class]
+	if ok {
+		return v
+	}
+	return fmt.Sprintf("%d", class)
+}
+
+func TypeMapping(dt dnsmessage.Type) string {
+	mapping := map[dnsmessage.Type]string{
+		dnsmessage.TypeA:     "A",
+		dnsmessage.TypeAAAA:  "AAAA",
+		dnsmessage.TypeCNAME: "CNAME",
+		dnsmessage.TypeNS:    "NS",
+		dnsmessage.TypeMX:    "MX",
+		dnsmessage.TypeSOA:   "SOA",
+		dnsmessage.TypeSRV:   "SRV",
+		dnsmessage.TypePTR:   "PTR",
+		dnsmessage.TypeTXT:   "TXT",
+	}
+
+	v, ok := mapping[dt]
+	if ok {
+		return v
+	}
+	return fmt.Sprintf("%d", dt)
+}
+
+func OpCodeMapping(code dnsmessage.OpCode) string {
+	mapping := map[dnsmessage.OpCode]string{
+		dnsmessage.OpCode(0): "Query",
+		dnsmessage.OpCode(1): "IQuery",
+		dnsmessage.OpCode(2): "Status",
+	}
+
+	v, ok := mapping[code]
+	if ok {
+		return v
+	}
+	return fmt.Sprintf("%d", code)
+}
+
+func StatusMapping(code dnsmessage.RCode) string {
+	mapping := map[dnsmessage.RCode]string{
+		dnsmessage.RCodeSuccess:        "Success",
+		dnsmessage.RCodeFormatError:    "FormatError",
+		dnsmessage.RCodeServerFailure:  "ServerFailure",
+		dnsmessage.RCodeNameError:      "NameError",
+		dnsmessage.RCodeNotImplemented: "NotImplemented",
+		dnsmessage.RCodeRefused:        "Refused",
+	}
+
+	v, ok := mapping[code]
+	if ok {
+		return v
+	}
+	return fmt.Sprintf("%d", code)
 }
 
 /*
@@ -164,6 +242,8 @@ func (d *decoder) decodeHeader() error {
 
 	d.m.Header = Header{
 		ID:       header.ID,
+		OpCode:   OpCodeMapping(header.OpCode),
+		Status:   StatusMapping(header.RCode),
 		Response: header.Response,
 	}
 	return nil
@@ -211,7 +291,7 @@ func (d *decoder) decodeQuestion() error {
 		}
 
 		d.m.QuestionSec.Name = q.Name.String()
-		d.m.QuestionSec.Type = q.Type.String()
+		d.m.QuestionSec.Type = TypeMapping(q.Type)
 		if err := d.p.SkipAllQuestions(); err != nil {
 			return err
 		}
@@ -313,6 +393,20 @@ func (d *decoder) parseResourceRecord(t dnsmessage.Type) (string, bool, error) {
 		}
 		s = fmt.Sprintf("%s:%d/W:%d/P:%d", r.Target.String(), r.Port, r.Weight, r.Priority)
 
+	case dnsmessage.TypeSOA:
+		r, err := d.p.SOAResource()
+		if err != nil {
+			return "", unknown, err
+		}
+		s = fmt.Sprintf("%s/%s/T:%d/E:%d", r.NS.String(), r.MBox.String(), r.MinTTL, r.Expire)
+
+	case dnsmessage.TypeTXT:
+		r, err := d.p.TXTResource()
+		if err != nil {
+			return "", unknown, err
+		}
+		s = strings.Join(r.TXT, "/")
+
 	case dnsmessage.TypeNS:
 		r, err := d.p.NSResource()
 		if err != nil {
@@ -362,9 +456,10 @@ func (d *decoder) decodeAnswer() error {
 		}
 
 		answer := Answer{
-			Name: h.Name.String(),
-			TTL:  h.TTL,
-			Type: h.Type.String(),
+			Name:  h.Name.String(),
+			TTL:   h.TTL,
+			Class: ClassMapping(h.Class),
+			Type:  TypeMapping(h.Type),
 		}
 
 		record, unknown, err := d.parseResourceRecord(h.Type)
@@ -394,7 +489,8 @@ func (d *decoder) decodeAuthority() error {
 		if !unknown {
 			d.m.AuthoritySec = append(d.m.AuthoritySec, Authority{
 				Name:   h.Name.String(),
-				Type:   h.Type.String(),
+				Type:   TypeMapping(h.Type),
+				Class:  ClassMapping(h.Class),
 				Record: record,
 			})
 		}
@@ -412,25 +508,46 @@ func (d *decoder) decodeAdditional() error {
 		}
 
 		additional := Additional{
-			Name: h.Header.Name.String(),
+			Name:  h.Header.Name.String(),
+			Class: ClassMapping(h.Header.Class),
 		}
 
 		switch r := h.Body.(type) {
 		case *dnsmessage.AResource:
 			additional.Record = ipString(r.A[:])
-			additional.Type = dnsmessage.TypeA.String()
+			additional.Type = TypeMapping(dnsmessage.TypeA)
 
 		case *dnsmessage.AAAAResource:
 			additional.Record = ipString(r.AAAA[:])
-			additional.Type = dnsmessage.TypeAAAA.String()
+			additional.Type = TypeMapping(dnsmessage.TypeAAAA)
 
 		case *dnsmessage.CNAMEResource:
 			additional.Record = r.CNAME.String()
-			additional.Type = dnsmessage.TypeCNAME.String()
+			additional.Type = TypeMapping(dnsmessage.TypeCNAME)
 
 		case *dnsmessage.NSResource:
 			additional.Record = r.NS.String()
-			additional.Type = dnsmessage.TypeNS.String()
+			additional.Type = TypeMapping(dnsmessage.TypeNS)
+
+		case *dnsmessage.MXResource:
+			additional.Record = r.MX.String()
+			additional.Type = TypeMapping(dnsmessage.TypeMX)
+
+		case *dnsmessage.PTRResource:
+			additional.Record = r.PTR.String()
+			additional.Type = TypeMapping(dnsmessage.TypePTR)
+
+		case *dnsmessage.SRVResource:
+			additional.Record = fmt.Sprintf("%s:%d/W:%d/P:%d", r.Target.String(), r.Port, r.Weight, r.Priority)
+			additional.Type = TypeMapping(dnsmessage.TypeSRV)
+
+		case *dnsmessage.SOAResource:
+			additional.Record = fmt.Sprintf("%s/%s/T:%d/E:%d", r.NS.String(), r.MBox.String(), r.MinTTL, r.Expire)
+			additional.Type = TypeMapping(dnsmessage.TypeSOA)
+
+		case *dnsmessage.TXTResource:
+			additional.Record = strings.Join(r.TXT, "/")
+			additional.Type = TypeMapping(dnsmessage.TypeTXT)
 		}
 
 		if additional.Type != "" {
