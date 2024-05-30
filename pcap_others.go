@@ -19,21 +19,19 @@ type pcapHandler struct {
 }
 
 type PcapClient struct {
-	opt      Options
-	handlers []*pcapHandler
-	common   *CommonClient
+	opt         Options
+	handlers    []*pcapHandler
+	common      *CommonClient
+	maxIfaceLen int
 }
 
 func NewPcapClient(opt Options) (*PcapClient, error) {
-	client := &PcapClient{
-		opt:    opt,
-		common: NewCommonClient(formatter.New(opt.Format, opt.Server, opt.Type)),
-	}
-
+	client := &PcapClient{opt: opt}
 	if err := client.getAvailableDevices(); err != nil {
 		return nil, err
 	}
 
+	client.common = NewCommonClient(formatter.New(opt.Format, opt.Server, opt.Type, client.maxIfaceLen))
 	for _, handler := range client.handlers {
 		go client.listen(handler)
 	}
@@ -53,6 +51,9 @@ func (c *PcapClient) getAvailableDevices() error {
 			return errors.Wrapf(err, "get device(%s) name failed", device.Name)
 		}
 
+		if c.maxIfaceLen < len(device.Name) {
+			c.maxIfaceLen = len(device.Name)
+		}
 		c.handlers = append(c.handlers, &pcapHandler{
 			device: device.Name,
 			handle: handler,

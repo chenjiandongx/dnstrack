@@ -23,24 +23,22 @@ type pcapHandler struct {
 }
 
 type PcapClient struct {
-	ctx      context.Context
-	cancel   context.CancelFunc
-	opt      Options
-	handlers []*pcapHandler
-	common   *CommonClient
+	ctx         context.Context
+	cancel      context.CancelFunc
+	opt         Options
+	handlers    []*pcapHandler
+	common      *CommonClient
+	maxIfaceLen int
 }
 
 func NewPcapClient(opt Options) (*PcapClient, error) {
-	client := &PcapClient{
-		opt:    opt,
-		common: NewCommonClient(formatter.New(opt.Format, opt.Server, opt.Type)),
-	}
-
+	client := &PcapClient{opt: opt}
 	client.ctx, client.cancel = context.WithCancel(context.Background())
 	if err := client.getAvailableDevices(); err != nil {
 		return nil, err
 	}
 
+	client.common = NewCommonClient(formatter.New(opt.Format, opt.Server, opt.Type, client.maxIfaceLen))
 	for _, handler := range client.handlers {
 		go client.listen(handler)
 	}
@@ -62,6 +60,10 @@ func (c *PcapClient) getAvailableDevices() error {
 
 		if err = c.setBPFFilter(handler, bpfFilter); err != nil {
 			return errors.Wrapf(err, "set bpf-filter on device(%s) failed", device.Name)
+		}
+
+		if c.maxIfaceLen < len(device.Name) {
+			c.maxIfaceLen = len(device.Name)
 		}
 		c.handlers = append(c.handlers, &pcapHandler{device: device.Name, handle: handler})
 	}
